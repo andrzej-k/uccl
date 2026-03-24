@@ -6,13 +6,13 @@
 #pragma once
 
 #include "transport_config.h"
-#include <cc/eqds.h>
 #include "util/jring.h"
 #include "util/latency.h"
 #include "util/list.h"
 #include "util/util.h"
 #include "util_buffpool.h"
 #include "util_timer.h"
+#include <cc/eqds.h>
 #include <infiniband/verbs.h>
 #include <atomic>
 #include <iomanip>
