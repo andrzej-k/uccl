@@ -10,7 +10,7 @@
 
 #pragma once
 
-#include "timely.h"
+#include <cc/timely.h>
 #include "transport_config.h"
 #include "util/cb.h"
 #include "util_timer.h"

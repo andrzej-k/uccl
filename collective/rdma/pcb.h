@@ -1,8 +1,8 @@
 #pragma once
 
 #include "eqds.h"
-#include "swift.h"
-#include "timely.h"
+#include <cc/swift.h>
+#include <cc/timely.h>
 #include "timing_wheel.h"
 #include "util/debug.h"
 #include "util/util.h"
