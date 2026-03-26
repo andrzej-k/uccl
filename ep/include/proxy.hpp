@@ -6,6 +6,8 @@
 #include "rdma.hpp"
 #include "ring_buffer.cuh"
 #include "util/gpu_rt.h"
+#include <cc/cc_state.h>
+#include <cc/link_bandwidth.h>
 #include <algorithm>
 #include <atomic>
 #include <chrono>
@@ -133,6 +135,12 @@ class Proxy {
   void* atomic_buffer_ptr_;
   std::vector<TransferCmd> postponed_atomics_;
   std::vector<uint64_t> postponed_wr_ids_;
+
+  uccl::cc::CongestionControlState cc_;
+
+  inline size_t getCcInflightLimitBytes() const {
+    return cc_.enabled() ? cc_.getWindowBytes() : get_max_inflight_bytes();
+  }
 
 #ifdef USE_MSCCLPP_FIFO_BACKEND
   std::vector<uint64_t> fifo_seq_;

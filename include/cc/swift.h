@@ -6,8 +6,8 @@
 #pragma once
 
 #include "util/latency.h"
+#include "util/timer.h"
 #include "util/util.h"
-#include "util_timer.h"
 #include <infiniband/verbs.h>
 #include <iomanip>
 
@@ -61,7 +61,7 @@ class SwiftCC {
   double rtt_ = kBaseDelay;
   double min_rtt_ = kBaseDelay;
 
-  uint32_t prev_cwnd_;
+  uint32_t prev_cwnd_ = kDefaultWnd;
   uint32_t swift_cwnd_ = kDefaultWnd;
 
   // Const

@@ -174,6 +174,16 @@ void Proxy::init_common() {
 
   per_thread_rdma_init(ctx_, cfg_.gpu_buffer, cfg_.total_size, my_rank,
                        cfg_.thread_idx, cfg_.local_rank);
+
+  // Initialize congestion control after RDMA context is available.
+  auto cc_mode =
+      uccl::cc::CongestionControlState::parseMode("UCCL_EP_RDMA_CC");
+  if (cc_mode != uccl::cc::CongestionControlState::Mode::kNone) {
+    double link_bw = uccl::cc::get_link_bandwidth_bps(ctx_.context,
+                                                      "UCCL_EP_RDMA_LINK_GBPS");
+    cc_.init(cc_mode, uccl::freq_ghz, link_bw);
+  }
+
   pin_thread_to_numa_wrapper();
   if (!get_cq(ctx_)) (void)create_per_thread_cq(ctx_);
 
@@ -555,6 +565,7 @@ void Proxy::notify_gpu_completion(uint64_t& my_tail) {
     while (!pend.empty()) {
       auto [front_wr, front_bytes] = pend.front();
       if (acked_wrs_.find(front_wr) == acked_wrs_.end()) break;
+      cc_.onAck(front_wr, front_bytes);
       acked_wrs_.erase(front_wr);  // consume this completion
       pend.pop_front();            // retire pending entry
 
@@ -617,7 +628,7 @@ void Proxy::post_gpu_command(uint64_t& my_tail, size_t& seen) {
     size_t kMaxInflight = cfg_.use_normal_mode ? get_max_inflight_normal()
                                                : get_max_inflight_low_latency();
     size_t budget = (kMaxInflight > pending) ? (kMaxInflight - pending) : 0;
-    size_t max_inflight_bytes = get_max_inflight_bytes() / kNumProxyThs;
+    size_t max_inflight_bytes = getCcInflightLimitBytes() / kNumProxyThs;
 
     // Pop commands from the FIFO until the budget is reached or the max
     // inflight bytes is reached.
@@ -648,6 +659,7 @@ void Proxy::post_gpu_command(uint64_t& my_tail, size_t& seen) {
       fifo_pending_[rb_idx].push_back(
           std::make_pair(unique_wr_id, static_cast<size_t>(cmd.bytes)));
       if (get_base_cmd(cmd.cmd_type) == CmdType::WRITE && cmd.bytes > 0) {
+        cc_.recordSendTsc(unique_wr_id);
         current_inflight_bytes.fetch_add(static_cast<size_t>(cmd.bytes),
                                          std::memory_order_release);
       }
