@@ -754,6 +754,10 @@ class NICEndpoint {
         (!contexts_.empty() && contexts_[0]) ? contexts_[0]->getCtx() : nullptr;
     double link_bw =
         uccl::cc::get_link_bandwidth_bps(ctx, "UCCL_P2P_RDMA_LINK_GBPS");
+    fprintf(stderr,
+            "[UCCL-CC] getOrCreateSendGroup: rank=%lu link_bw=%.0f bps "
+            "(%.1f Gbps)\n",
+            rank_id, link_bw, link_bw * 8.0 / 1e9);
     {
       std::unique_lock write_lock(send_channel_mutex_);
       auto [it, inserted] = send_channel_groups_.try_emplace(

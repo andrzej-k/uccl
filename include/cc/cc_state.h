@@ -13,6 +13,7 @@
 #include <atomic>
 #include <cctype>
 #include <cstdlib>
+#include <cstdio>
 #include <memory>
 #include <string>
 
@@ -25,17 +26,36 @@ class CongestionControlState {
 
   CongestionControlState() = default;
 
+  static char const* modeName(Mode m) {
+    switch (m) {
+      case Mode::kTimely: return "TIMELY";
+      case Mode::kSwift: return "SWIFT";
+      default: return "NONE";
+    }
+  }
+
   /// Construct with known parameters (e.g. P2P path where link BW is known).
   CongestionControlState(Mode mode, double freq_ghz, double link_bw_bps)
       : mode_(mode),
         timely_(freq_ghz, link_bw_bps),
-        swift_(freq_ghz, link_bw_bps) {}
+        swift_(freq_ghz, link_bw_bps) {
+    fprintf(stderr,
+            "[UCCL-CC] CongestionControlState created: mode=%s "
+            "freq_ghz=%.3f link_bw_bps=%.0f (%.1f Gbps)\n",
+            modeName(mode_), freq_ghz, link_bw_bps,
+            link_bw_bps * 8.0 / 1e9);
+  }
 
   /// Deferred init (e.g. EP path — after RDMA context is available).
   void init(Mode mode, double freq_ghz, double link_bw_bps) {
     mode_ = mode;
     timely_ = timely::TimelyCC(freq_ghz, link_bw_bps);
     swift_ = swift::SwiftCC(freq_ghz, link_bw_bps);
+    fprintf(stderr,
+            "[UCCL-CC] CongestionControlState::init: mode=%s "
+            "freq_ghz=%.3f link_bw_bps=%.0f (%.1f Gbps)\n",
+            modeName(mode_), freq_ghz, link_bw_bps,
+            link_bw_bps * 8.0 / 1e9);
   }
 
   /// Parse CC mode from an environment variable (case-insensitive).
@@ -82,6 +102,20 @@ class CongestionControlState {
       swift_.adjust_wnd(delay_us, bytes);
     }
     send_tsc_[wr_id % kTscWindowSize].store(0, std::memory_order_relaxed);
+
+    uint64_t cnt = ack_count_.fetch_add(1, std::memory_order_relaxed) + 1;
+    if (cnt == 1) {
+      double rtt_us = to_usec(sample_rtt_tsc, freq_ghz);
+      fprintf(stderr,
+              "[UCCL-CC] *** FIRST ACK *** mode=%s wr_id=%lu rtt=%.1fus "
+              "window=%zuB acked_bytes=%zu — CC IS ACTIVE\n",
+              modeName(mode_), wr_id, rtt_us, getWindowBytes(), acked_bytes);
+    } else if ((cnt % 100000) == 0) {
+      double rtt_us = to_usec(sample_rtt_tsc, freq_ghz);
+      fprintf(stderr,
+              "[UCCL-CC] mode=%s ack#%lu rtt=%.1fus window=%zuB\n",
+              modeName(mode_), cnt, rtt_us, getWindowBytes());
+    }
   }
 
   /// Returns CC-controlled window in bytes, or 0 if CC is disabled.
@@ -96,6 +130,7 @@ class CongestionControlState {
   std::unique_ptr<std::atomic<uint64_t>[]> send_tsc_{
       new std::atomic<uint64_t>[kTscWindowSize]{}};
   Mode mode_ = Mode::kNone;
+  std::atomic<uint64_t> ack_count_{0};
   timely::TimelyCC timely_;
   swift::SwiftCC swift_;
 };

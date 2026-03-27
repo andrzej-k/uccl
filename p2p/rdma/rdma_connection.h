@@ -114,6 +114,12 @@ class SendConnection : public RDMAConnection {
         auto_start_polling_(auto_start_polling),
         cc_(uccl::cc::CongestionControlState::parseMode("UCCL_P2P_RDMA_CC"),
             uccl::freq_ghz, link_bandwidth_bps) {
+    fprintf(stderr,
+            "[UCCL-CC] SendConnection: cc_mode=%s enabled=%d "
+            "link_bw=%.0f bps (%.1f Gbps)\n",
+            uccl::cc::CongestionControlState::modeName(cc_.mode()),
+            cc_.enabled(),
+            link_bandwidth_bps, link_bandwidth_bps * 8.0 / 1e9);
     tracker_ = std::make_shared<AtomicBitmapPacketTrackerMultiAck>();
     request_queue_ = std::make_unique<
         RingBuffer<std::shared_ptr<RDMASendRequest>, kRingCapacity>>();
@@ -285,7 +291,16 @@ class SendConnection : public RDMAConnection {
   uccl::cc::CongestionControlState cc_;
 
   inline size_t currentInflightLimitBytes() {
-    return cc_.enabled() ? cc_.getWindowBytes() : kInFlightMaxSizeKB * 1024;
+    size_t limit = cc_.enabled() ? cc_.getWindowBytes() : kInFlightMaxSizeKB * 1024;
+    static std::atomic<uint64_t> inflight_log_ctr{0};
+    uint64_t c = inflight_log_ctr.fetch_add(1, std::memory_order_relaxed);
+    if (c == 0) {
+      fprintf(stderr,
+              "[UCCL-CC] currentInflightLimitBytes first call: "
+              "cc_enabled=%d limit=%zuB (%zuKB)\n",
+              cc_.enabled(), limit, limit / 1024);
+    }
+    return limit;
   }
 
   // Send a request through the appropriate channel
