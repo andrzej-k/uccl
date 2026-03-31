@@ -90,6 +90,20 @@ def test_main(
     skip_benchmark: bool = False,
     debug_hash: bool = False,
 ):
+    def gather_topk_idx(t: torch.Tensor) -> torch.Tensor:
+        backend = dist.get_backend(group)
+        if backend == "gloo":
+            t_cpu = t.cpu()
+            gathered_cpu = [torch.empty_like(t_cpu) for _ in range(num_ranks)]
+            dist.all_gather(gathered_cpu, t_cpu, group=group)
+            return torch.stack(gathered_cpu, dim=0).to(t.device)
+
+        gathered = torch.empty(
+            (num_ranks, t.size(0), t.size(1)), dtype=t.dtype, device=t.device
+        )
+        dist.all_gather_into_tensor(gathered, t, group=group)
+        return gathered
+
     torch.manual_seed(seed + rank)
     random.seed(seed + rank)
 
@@ -208,14 +222,7 @@ def test_main(
                                 if dispatch_use_fp8_case
                                 else packed_recv_x.clone()
                             )
-                            all_topk_idx = torch.empty(
-                                (num_ranks, num_tokens, num_topk),
-                                dtype=topk_idx.dtype,
-                                device="cuda",
-                            )
-                            dist.all_gather_into_tensor(
-                                all_topk_idx, topk_idx, group=group
-                            )
+                            all_topk_idx = gather_topk_idx(topk_idx)
                             for i in range(num_local_experts if do_check else 0):
                                 expert_id = rank * num_local_experts + i
                                 recv_x = (

@@ -45,6 +45,10 @@ def hash_tensor(t: torch.Tensor):
 
 def init_dist(local_rank: int, num_local_ranks: int):
     # Set device
+    dist_backend = os.getenv("UCCL_DIST_BACKEND", "nccl")
+    oob_group_backend = os.getenv("UCCL_OOB_GROUP_BACKEND", "gloo")
+    if dist_backend == "nccl":
+        torch.cuda.set_device(local_rank)
 
     # NOTES: you may rewrite this function with your own cluster settings
     ip = os.getenv("MASTER_ADDR", "127.0.0.1")
@@ -52,40 +56,58 @@ def init_dist(local_rank: int, num_local_ranks: int):
     world_size = int(os.getenv("WORLD_SIZE", 1))
     node_rank = int(os.getenv("RANK", 0))
 
-    sig = inspect.signature(dist.init_process_group)
     params = {
-        "backend": "nccl",
+        "backend": dist_backend,
         "init_method": f"tcp://{ip}:{port}",
         "world_size": world_size,
         "rank": node_rank,
     }
     print(params)
-    if "device_id" in sig.parameters:
-        # noinspection PyTypeChecker
-        params["device_id"] = torch.device(f"cuda:{local_rank}")
+    # Keep device_id opt-in: eager NCCL init can be unstable on some IB stacks.
+    if (
+        dist_backend == "nccl"
+        and os.getenv("UCCL_TORCH_INIT_WITH_DEVICE_ID", "0") == "1"
+    ):
+        sig = inspect.signature(dist.init_process_group)
+        if "device_id" in sig.parameters:
+            # noinspection PyTypeChecker
+            params["device_id"] = torch.device(f"cuda:{local_rank}")
     dist.init_process_group(**params)
     torch.set_default_dtype(torch.bfloat16)
     return (
         dist.get_rank(),
         dist.get_world_size(),
-        dist.new_group(list(range(world_size))),
+        dist.new_group(list(range(world_size)), backend=oob_group_backend),
     )
 
 
 def init_dist_under_torchrun(local_rank: int, num_local_ranks: int):
     # torchrun already sets RANK, WORLD_SIZE, MASTER_ADDR, MASTER_PORT
-    dist.init_process_group(
-        backend="nccl", device_id=torch.device(f"cuda:{local_rank}")
-    )
+    dist_backend = os.getenv("UCCL_DIST_BACKEND", "nccl")
+    oob_group_backend = os.getenv("UCCL_OOB_GROUP_BACKEND", "gloo")
+    if dist_backend == "nccl":
+        torch.cuda.set_device(local_rank)
+
+    init_kwargs = {"backend": dist_backend}
+    # Keep device_id opt-in: eager NCCL init can be unstable on some IB stacks.
+    if (
+        dist_backend == "nccl"
+        and os.getenv("UCCL_TORCH_INIT_WITH_DEVICE_ID", "0") == "1"
+    ):
+        sig = inspect.signature(dist.init_process_group)
+        if "device_id" in sig.parameters:
+            init_kwargs["device_id"] = torch.device(f"cuda:{local_rank}")
+    dist.init_process_group(**init_kwargs)
 
     torch.set_default_dtype(torch.bfloat16)
-    torch.set_default_device(f"cuda:{local_rank}")
-    torch.cuda.set_device(local_rank)
-
+    if torch.cuda.is_available():
+        torch.set_default_device(f"cuda:{local_rank}")
     return (
         dist.get_rank(),
         dist.get_world_size(),
-        dist.new_group(list(range(dist.get_world_size()))),
+        dist.new_group(
+            list(range(dist.get_world_size())), backend=oob_group_backend
+        ),
     )
 
 
@@ -554,6 +576,11 @@ def initialize_uccl(
 
     proxies = []
 
+    if isinstance(scratch_ptr, torch.Tensor):
+        scratch_addr = int(scratch_ptr.data_ptr())
+    else:
+        scratch_addr = int(scratch_ptr)
+
     # Calculate num_nodes from num_ranks and nproc_per_node
     if nproc_per_node > 0:
         num_nodes = num_ranks // nproc_per_node
@@ -563,7 +590,7 @@ def initialize_uccl(
     for i in range(ep.get_num_proxy_threads()):
         proxy = ep.Proxy(
             thread_idx=i,
-            gpu_buffer_addr=scratch_ptr,
+            gpu_buffer_addr=scratch_addr,
             total_size=scratch_nbytes,
             rank=rank,
             node_idx=node_idx,
@@ -578,7 +605,7 @@ def initialize_uccl(
         proxies.append(proxy)
 
     rank2meta = get_cpu_proxies_meta(
-        proxies, rank, scratch_ptr, scratch_nbytes, num_ranks, group
+        proxies, rank, scratch_addr, scratch_nbytes, num_ranks, group
     )
     peers_meta_list = [rank2meta[r] for r in range(num_ranks)]
 
