@@ -61,7 +61,7 @@ class SwiftCC {
   double rtt_ = kBaseDelay;
   double min_rtt_ = kBaseDelay;
 
-  uint32_t prev_cwnd_;
+  uint32_t prev_cwnd_ = kDefaultWnd;
   uint32_t swift_cwnd_ = kDefaultWnd;
 
   // Const

@@ -1,6 +1,7 @@
 #pragma once
 #include "barrier_local.hpp"
 #include "util/gpu_rt.h"
+#include <cc/cc_state.h>
 #include <infiniband/verbs.h>
 #include <atomic>
 #include <map>
@@ -183,6 +184,9 @@ struct ProxyCtx {
   void* per_gpu_device_buf[MAX_NUM_GPUS] = {nullptr};
 
   uint32_t tag = 0;
+
+  // Congestion control state (TIMELY / SWIFT)
+  uccl::cc::CongestionControlState cc_;
 
   TokenCounter<DispatchTokenKey> dispatch_token_counter;
   TokenCounter<CombineTokenKey> combine_token_counter;

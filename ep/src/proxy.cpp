@@ -3,6 +3,7 @@
 #include "d2h_queue_host.hpp"
 #include "ep_util.hpp"
 #include "util/util.h"
+#include <cc/link_bandwidth.h>
 #include <arpa/inet.h>  // for htonl, ntohl
 #include <chrono>
 #include <cstdlib>
@@ -176,6 +177,20 @@ void Proxy::init_common() {
                        cfg_.thread_idx, cfg_.local_rank);
   pin_thread_to_numa_wrapper();
   if (!get_cq(ctx_)) (void)create_per_thread_cq(ctx_);
+
+  // Initialize congestion control (RoCE only).
+  auto cc_mode =
+      uccl::cc::CongestionControlState::parseMode("UCCL_EP_RDMA_CC");
+  if (cc_mode != uccl::cc::CongestionControlState::Mode::kNone) {
+    double link_bw = uccl::cc::get_link_bandwidth_bps(
+        ctx_.context, "UCCL_EP_RDMA_LINK_GBPS");
+    ctx_.cc_.init(cc_mode, uccl::freq_ghz, link_bw);
+    fprintf(stderr, "[EP-CC] thread %d: CC mode=%s, link_bw=%.1f Gbps\n",
+            cfg_.thread_idx,
+            cc_mode == uccl::cc::CongestionControlState::Mode::kTimely
+                ? "timely" : "swift",
+            link_bw * 8.0 / 1e9);
+  }
 
   // Register atomic_buffer_ptr as a separate RDMA memory region if it was set
   // This must be done after PD is initialized by per_thread_rdma_init
@@ -617,7 +632,10 @@ void Proxy::post_gpu_command(uint64_t& my_tail, size_t& seen) {
     size_t kMaxInflight = cfg_.use_normal_mode ? get_max_inflight_normal()
                                                : get_max_inflight_low_latency();
     size_t budget = (kMaxInflight > pending) ? (kMaxInflight - pending) : 0;
-    size_t max_inflight_bytes = get_max_inflight_bytes() / kNumProxyThs;
+    size_t max_inflight_bytes =
+        ctx_.cc_.enabled()
+            ? ctx_.cc_.getWindowBytes() / kNumProxyThs
+            : get_max_inflight_bytes() / kNumProxyThs;
 
     // Pop commands from the FIFO until the budget is reached or the max
     // inflight bytes is reached.

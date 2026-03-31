@@ -3,6 +3,7 @@
 #include "proxy_ctx.hpp"
 #include "rdma_util.hpp"
 #include "util/gpu_rt.h"
+#include <cc/link_bandwidth.h>
 #ifdef USE_DMABUF
 #include <condition_variable>
 #include <map>
@@ -1505,6 +1506,7 @@ static void post_rdma_async_batched_normal_mode(
                 dst_rank, strerror(ret), ret);
         std::abort();
       }
+      for (auto wrid : ring_wrids) S.cc_.recordSendTsc(wrid);
 #elif defined(SOFTWARE_ORDERING)
       {
         size_t const local_ring_count = ctx->data_qps_by_channel.size();
@@ -1649,6 +1651,7 @@ static void post_rdma_async_batched_normal_mode(
                     bad->wr_id);
           std::abort();
         }
+        for (auto wrid : ring_wrids) S.cc_.recordSendTsc(wrid);
 
         // All WRs in this group are signaled; no batched WR bookkeeping needed.
       }
@@ -1784,6 +1787,7 @@ static void post_rdma_async_batched_normal_mode(
                     bad->wr_id);
           std::abort();
         }
+        for (auto wrid : ring_wrids) S.cc_.recordSendTsc(wrid);
         // All WRs in this group are signaled; no batched WR bookkeeping needed.
       }
 #endif
@@ -1924,6 +1928,7 @@ static void post_rdma_async_batched_fast_mode(
               dst_rank, strerror(ret), ret);
       std::abort();
     }
+    for (size_t j = 0; j < k; ++j) S.cc_.recordSendTsc(wr_ids[j]);
 #else
     std::vector<ibv_sge> sges;
     std::vector<ibv_send_wr> wrs;
@@ -2024,6 +2029,7 @@ static void post_rdma_async_batched_fast_mode(
         fprintf(stderr, "Bad WR at %p (wr_id=%lu)\n", (void*)bad, bad->wr_id);
       std::abort();
     }
+    for (size_t j = 0; j < k; ++j) S.cc_.recordSendTsc(wr_ids[j]);
     // All WRs are signaled; no batched WR bookkeeping needed.
 #endif
   }
@@ -2091,6 +2097,7 @@ void local_process_completions(ProxyCtx& S,
           }
         }
 #endif
+        S.cc_.onAck(wc[i].wr_id, wc[i].byte_len);
         acked_wrs.insert(wc[i].wr_id);
       } break;
       case IBV_WC_RECV:
