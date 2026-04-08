@@ -20,6 +20,9 @@
 #include <unordered_set>
 #include <vector>
 
+// Forward declaration — defined in rdma.hpp.
+struct PendingUpdate;
+
 // ---------------------------------------------------------------------------
 // Falcon connection info — exchanged between peers during setup.
 // Mirrors RDMAConnectionInfo for Falcon hardware.

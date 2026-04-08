@@ -6,6 +6,7 @@
 // RDMA function in ep/src/rdma.cpp but targeting Falcon hardware.
 
 #include "falcon.hpp"
+#include "rdma.hpp"
 #include "util/debug.h"
 
 // ---------------------------------------------------------------------------
