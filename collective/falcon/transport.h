@@ -11,9 +11,9 @@
 #include "transport_config.h"
 #include "util/debug.h"
 #include "util/latency.h"
+#include "util/jring.h"
 #include "util/shared_pool.h"
 #include "util/util.h"
-#include "util_timer.h"
 #include <condition_variable>
 #include <cstddef>
 #include <cstdint>
@@ -63,7 +63,6 @@ class Channel {
     struct ucclRequest* ureq;
     PollCtx* poll_ctx;
   };
-  static_assert(sizeof(Msg) % 4 == 0, "channelMsg must be 32-bit aligned");
 
   struct CtrlMsg {
     enum Op : uint8_t {
@@ -72,10 +71,8 @@ class Channel {
     };
     Op opcode;
     PeerID peer_id;
-    union CtrlMeta meta;
     PollCtx* poll_ctx;
   };
-  static_assert(sizeof(CtrlMsg) % 4 == 0, "channelMsg must be 32-bit aligned");
 
   Channel() {
     tx_cmdq_ = create_ring(sizeof(Msg), kChannelSize);

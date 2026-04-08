@@ -9,6 +9,7 @@
 #include "transport_config.h"
 #include "util/debug.h"
 #include <atomic>
+#include <cstring>
 #include <mutex>
 #include <thread>
 #include <unistd.h>
@@ -24,7 +25,7 @@ static std::shared_ptr<FalconEndpoint> ep;
 // ---------------------------------------------------------------------------
 
 ncclResult_t pluginInit(ncclDebugLogger_t logFunction) {
-  UCCL_LOG(INFO) << "Falcon plugin init from PID: " << getpid();
+  std::cout << "Falcon plugin init from PID: " << getpid() << std::endl;
   ep = std::make_shared<FalconEndpoint>(ucclParamNUM_ENGINES());
   // TODO: Initialize Falcon hardware resources.
   return ncclSuccess;
@@ -37,7 +38,7 @@ ncclResult_t pluginDevices(int* ndev) {
 
 ncclResult_t pluginGetProperties(int dev, ncclNetProperties_v8_t* props) {
   // TODO: Fill in Falcon device properties (name, PCI path, GUID, speed, etc.)
-  memset(props, 0, sizeof(*props));
+  std::memset(props, 0, sizeof(*props));
   props->name = PLUGIN_NAME;
   props->maxComms = MAX_PEER;
   return ncclSuccess;

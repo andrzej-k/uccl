@@ -31,3 +31,7 @@ static constexpr uint32_t kMaxPath = 32;
 // TODO: Tune these for OCP Falcon hardware.
 static constexpr uint32_t kFalconMaxMTU = 4096;
 static constexpr uint32_t kFalconMaxQP = 128;
+
+// Basic type aliases used across the transport layer.
+typedef uint64_t FlowID;
+typedef uint64_t PeerID;

@@ -10,6 +10,11 @@ LIBS_SHARED = -lgflags -lgtest -lz -lelf
 # TODO: Add Falcon-specific libraries (e.g., libfalcon) once available.
 override CXXFLAGS += -O3 -g -std=c++17 -Wno-pointer-arith -Wno-interference-size -fPIC -DUSE_CUDA -MMD -MP
 
+# Add Intel RDMA NIC support if USE_INTEL_RDMA_NIC=1
+ifeq ($(USE_INTEL_RDMA_NIC),1)
+  override CXXFLAGS += -DINTEL_RDMA_NIC
+endif
+
 PLUGIN_SO = libnccl-net-falcon.so
 NCCL_INC := -I$(NCCL_HOME)/build/include -I$(NCCL_HOME)/src/include -I$(CUDA_HOME)/include
 
