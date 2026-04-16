@@ -131,6 +131,15 @@ int FalconEngine::create_flow_qps(FalconFlow* flow) {
   auto* fdev = endpoint_->get_device(flow->dev);
   if (!fdev) return -1;
 
+  // Create multiple RC QPs per flow for ECMP path diversity.  Each QP maps
+  // to a separate Falcon ordered connection with a unique flow label (derived
+  // from QPN by the irdma driver), producing a distinct 5-tuple hash and
+  // therefore a different network path through the fabric.  This is necessary
+  // because MEV's HW RUE does not currently implement Falcon PLB
+  // (Protective Load Balancing / randomize_path), so the NIC cannot
+  // dynamically reroute a single connection onto a less-congested path.
+  // Multi-QP spreading provides immediate static path diversity from the
+  // first packet, complementing any future PLB enablement.
   int num_qps = ucclParamFalconPortEntropy();
   flow->num_qps = num_qps;
   flow->qps.resize(num_qps);
